@@ -41,6 +41,8 @@ VIOLET = [48, 16, 180]
 LAVENDER = [129, 0, 127]
 PINK = [210, 15, 192]
 
+GRAY = [200, 200, 200]
+
 color_list = [
     RED,
     REDORANGE,
@@ -216,6 +218,9 @@ class SongSelector(AppMode):
                 this.songList.append(f)
 
     def updateScreen(this):
+        # Set the screen background
+        screen.fill(BLACK)
+
         # Clear the window space for the list
         WIDTH = screen.get_width()
         HEIGHT = screen.get_height()
@@ -276,16 +281,29 @@ class SongStartup(AppMode):
     topRow = 0
     curRow = 0
     visibleRows = 6
-    bpm = 80
+    tempo = 80
     octaves = 2
 
     def initialize(this, path, song):
         songPath = os.path.join(path, song)
         this.players = []
         this.accompany = []
+        this.playNotes = []
+        startTempo = 0
 
         # Import the music data
         this.mxml = ElementTree.parse(songPath).getroot()
+
+        # Find the title
+        titleTypes = ["work/work-title", "movement-title"]
+        this.songTitle = "Untitled"
+        for titleType in titleTypes:
+            workTitle = this.mxml.find(titleType)
+            print(titleType, workTitle)
+            if workTitle is not None:
+                this.songTitle = workTitle.text
+                break
+            
         if (this.mxml.tag == 'score-partwise'):
             # This structure has multiple parts. Each part has multiple measures.
             # Find the list of parts.
@@ -298,14 +316,157 @@ class SongStartup(AppMode):
                     partName = part.find("part-name")
                     print(partID, partName.text)
                     this.parts.append([partID, "" if partName is None or partName.text is None else partName.text])
+            for part in this.mxml.iter("part"):
+                # Work through each measure in the part.
+                timeCode = 0.0
+                partCode = part.get("id")
+                for measure in part.iter("measure"):
+                    # Within each measure, go through each element.
+                    # Some elements are about attributes.
+                    # Others are notes, rests or other timing items.
+                    for musicUnit in measure:
+                        if musicUnit.tag == "direction":
+                            # Tempo is hidden in direction including "sound"
+                            soundFeature = musicUnit.find("sound")
+                            if soundFeature is not None and soundFeature.get("tempo") is not None:
+                                tempo = int(soundFeature.get("tempo"))
+                                if startTempo == 0:
+                                    startTempo = tempo
+                                    this.tempo = tempo
+        this.updatePlayerParts()
+
+    def updatePlayerParts(this):
+        this.playNotes = []
+        this.noteCount = dict()
+        if (this.mxml.tag == 'score-partwise'):
+            # Using the parts identified, look for measures belonging to that part.
+            for part in this.mxml.iter("part"):
+                # Work through each measure in the part.
+                timeCode = 0.0
+                partCode = part.get("id")
+                for measure in part.iter("measure"):
+                    # Within each measure, go through each element.
+                    # Some elements are about attributes.
+                    # Others are notes, rests or other timing items.
+                    for musicUnit in measure:
+                        if musicUnit.tag == "note":
+                            tieInfo = musicUnit.find("tie")
+                            if tieInfo is not None:
+                                typeOfTie = tieInfo.get("type")
+                            else:
+                                typeOfTie = "none"
+
+                            # If it is not a rest, then pull out the pitch information.
+                            if musicUnit.find("rest") is None and (tieInfo is None or typeOfTie == "start"):
+                                # What note is played by pitch?
+                                pitchInfo = musicUnit.find("pitch")
+                                octave = pitchInfo.find("octave")
+                                step = pitchInfo.find("step")
+                                alter = pitchInfo.find("alter")
+                                # What type of note?
+                                symbol = musicUnit.find("type").text
+
+                                # Translate to standard information
+                                tone = toneLookup.get(step.text)
+                                adjust = 0
+                                if alter is not None:
+                                    adjust = int(alter.text)
+                                    tone = tone + adjust
+                                if octave is None:
+                                    octave = 4
+                                else:
+                                    octave = int(octave.text)
+
+                                # Standardize in case sharps or flats shift to different octave
+                                noteIndex = 12*octave+tone
+                                octave = noteIndex // 12
+                                tone = noteIndex % 12
+
+                                if partCode in this.players:
+                                    adjustedTone = 12*octave + tone
+                                    while adjustedTone > HIGHEST_NOTE:
+                                        octave = octave - 1
+                                        adjustedTone = 12*octave + tone
+                                    while adjustedTone < LOWEST_NOTE:
+                                        octave = octave + 1
+                                        adjustedTone = 12*octave + tone
+                                    theNote = Note(tone, adjust, octave, symbol, timeCode, 1)
+                                    this.playNotes.append(theNote)
+                                    newCnt = this.noteCount.get(adjustedTone, 0) + 1
+                                    this.noteCount[adjustedTone] = newCnt
+
+        elif (this.mxml.tag == 'score-timewise'):
+            # This structure has multiple measures. Each measure has multiple parts.
+            pass
+        else:
+            print("Score structure not recognized.")
+
+        # Sort the notes into time-based ordering.
+        this.playNotes.sort(key = lambda note : note.octave)
+        this.playNotes.sort(key = lambda note : note.tone)
 
     def updateScreen(this):
+        # Set the screen background
+        screen.fill(WHITE)
+
         # Clear the window space for the list
         WIDTH = screen.get_width()
         HEIGHT = screen.get_height()
+
+        # Draw the title of the song
+        titleText = create_text(this.songTitle, nameFonts, 36, GRAY)
+        screen.blit(titleText,
+                    ((WIDTH - titleText.get_width()) // 2, HEIGHT // 4))
+
+        # Draw BPM
+        bpmText = create_text(str(this.tempo) + " bpm", nameFonts, 24, GRAY)
+        screen.blit(bpmText,
+                    ((WIDTH - bpmText.get_width()) // 2, HEIGHT // 4 + 36))
+
+        # Draw the line where we should play.
+        pygame.draw.line(screen, BLACK, [0,FLASHLINE], [WIDTH,FLASHLINE], 5)
+
+        # Process each note that should appear on the screen.
+        if this.octaves=='1':
+            refPos = 100
+            spacing = (WIDTH-200) // 12
+        else:
+            refPos = WIDTH//2
+            spacing = (WIDTH-200) // 24
+        noteList = list(this.noteCount.keys())
+        noteList.sort()
+        for note in noteList:
+            octave = note // 12
+            tone = note % 12
+            x = refPos + (note-48)*spacing
+            noteName = diatonicNames[tone] + str(octave)
+            theNote = Note(tone, 0, octave, "Q", 0, 1)
+            theNote.draw(screen, [x, STARTLINE], 0)
+
+            cnt = this.noteCount[note]
+            pos = [x, STARTLINE+20]
+
+            cntText = create_text(str(cnt), nameFonts, 18, WHITE)
+            cntTextShadow = create_text(str(cnt), nameFonts, 18, BLACK)
+            screen.blit(cntTextShadow,
+                (pos[0] - cntText.get_width() // 2 - 1, pos[1] - cntText.get_height() // 2 - 1))
+            screen.blit(cntTextShadow,
+                (pos[0] - cntText.get_width() // 2 + 1, pos[1] - cntText.get_height() // 2 - 1))
+            screen.blit(cntTextShadow,
+                (pos[0] - cntText.get_width() // 2 - 1, pos[1] - cntText.get_height() // 2))
+            screen.blit(cntTextShadow,
+                (pos[0] - cntText.get_width() // 2 + 1, pos[1] - cntText.get_height() // 2))
+            screen.blit(cntTextShadow,
+                (pos[0] - cntText.get_width() // 2 - 1, pos[1] - cntText.get_height() // 2 + 1))
+            screen.blit(cntTextShadow,
+                (pos[0] - cntText.get_width() // 2 + 1, pos[1] - cntText.get_height() // 2 + 1))
+            screen.blit(cntText,
+                (pos[0] - cntText.get_width() // 2, pos[1] - cntText.get_height() // 2))
+
         LINEHEIGHT = 18
         PANEHEIGHT = LINEHEIGHT * (this.visibleRows+4)
         PANEWIDTH = 600
+
         paneLeft = (WIDTH - PANEWIDTH) // 2
         paneTop = (HEIGHT - PANEHEIGHT) // 2
         pygame.draw.rect(screen, WHITE, pygame.Rect(paneLeft, paneTop, PANEWIDTH, PANEHEIGHT))
@@ -339,7 +500,7 @@ class SongStartup(AppMode):
             if event.key == pygame.K_RETURN:
                 redraw = False
                 controller.active = SongPlayer()
-                controller.active.initialize(this.mxml, this.players, this.accompany, this.octaves, this.bpm)
+                controller.active.initialize(this.mxml, this.players, this.accompany, this.octaves, this.songTitle, this.tempo)
 
             # Backup a level and choose a different song
             elif event.key == pygame.K_ESCAPE:
@@ -352,6 +513,7 @@ class SongStartup(AppMode):
                     this.players.remove(partID)
                 else:
                     this.players.append(partID)
+                this.updatePlayerParts()
                 redraw = True
 
             elif event.key == pygame.K_a:
@@ -373,17 +535,23 @@ class SongStartup(AppMode):
                 this.curRow = min(this.curRow + 1, len(this.parts)-1)
                 if this.curRow >= this.topRow + this.visibleRows:
                     this.topRow = this.curRow-this.visibleRows+1
+
+            elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                this.tempo = this.tempo + 4
+            elif event.key == pygame.K_MINUS or event.key == pygame.K_UNDERSCORE:
+                this.tempo = this.tempo - 4
         if redraw:
             this.doUpdate()
 
 
 class SongPlayer(AppMode):
-    def initialize(this, mxml, players, accompany, octaves, bpm):
+    def initialize(this, mxml, players, accompany, octaves, title, bpm):
         this.playerParts = players
         this.accompanyParts = accompany
         this.playNotes = []
         this.accompaniment = []
         this.octaves = octaves
+        this.songTitle = title
         this.tempo = bpm
         tempo = bpm
 
@@ -403,16 +571,7 @@ class SongPlayer(AppMode):
                     # Some elements are about attributes.
                     # Others are notes, rests or other timing items.
                     for musicUnit in measure:
-                        if musicUnit.tag == "direction":
-                            # Tempo is hidden in direction including "sound"
-                            soundFeature = musicUnit.find("sound")
-                            if soundFeature is not None and soundFeature.get("tempo") is not None:
-                                tempo = int(soundFeature.get("tempo"))
-                                if startTempo == 0:
-                                    startTempo = tempo
-                                    this.tempo = tempo
-
-                        elif musicUnit.tag == "attributes":
+                        if musicUnit.tag == "attributes":
                             # Additional timing info is in the time signature.
                             divisions = musicUnit.find("divisions")
                             if divisions is not None:
@@ -529,6 +688,16 @@ class SongPlayer(AppMode):
         # Draw the line where we should play.
         pygame.draw.line(screen, BLACK, [0,FLASHLINE], [WIDTH,FLASHLINE], 5)
 
+        # Draw the title of the song
+        titleText = create_text(this.songTitle, nameFonts, 36, GRAY)
+        screen.blit(titleText,
+                    ((WIDTH - titleText.get_width()) // 2, HEIGHT // 4))
+
+        # Draw BPM
+        bpmText = create_text(str(this.tempo) + " bpm", nameFonts, 24, GRAY)
+        screen.blit(bpmText,
+                    ((WIDTH - bpmText.get_width()) // 2, HEIGHT // 4 + 36))
+
         # Process each note that should appear on the screen.
         i = 0
         drawQueue = []
@@ -551,7 +720,7 @@ class SongPlayer(AppMode):
                 drawQueue.append(addNote)
                 noteQueue.add(noteName)
 
-            if this.timeCode - timeOnScreen/this.timeFactor/4 < nextNote.timeCode and nextNote.timeCode < this.timeCode + timeOnScreen/this.timeFactor:
+            if this.timeCode - 0/this.timeFactor/4 < nextNote.timeCode and nextNote.timeCode < this.timeCode + timeOnScreen/this.timeFactor:
                 # Draw the note
                 y = STARTLINE + int((FLASHLINE-STARTLINE)*(1 + (this.timeCode - nextNote.timeCode)*this.timeFactor/timeOnScreen))
                 addNote = DrawNote(nextNote, x, y, this.timeCode)
