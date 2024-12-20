@@ -68,6 +68,33 @@ toneLookup = {
     "B" : 11
     }
 
+def drawText(textStr, pos, lineHeight, color, shadowColor = None, centerX = False, centerY = False):
+    
+    text = create_text(textStr, nameFonts, lineHeight, color)
+    position = pos
+    if centerX:
+        position = (position[0] - text.get_width() // 2, position[1])
+    if centerY:
+        position = (position[0], position[1] - text.get_height() // 2)
+    if shadowColor is not None:
+        textShadow = create_text(textStr, nameFonts, lineHeight, shadowColor)
+        screen.blit(textShadow,
+            (position[0] - 1, position[1] - 1))
+        screen.blit(textShadow,
+            (position[0] + 1, position[1] - 1))
+        screen.blit(textShadow,
+            (position[0] - 1, position[1]))
+        screen.blit(textShadow,
+            (position[0] + 1, position[1]))
+        screen.blit(textShadow,
+            (position[0] - 1, position[1] + 1))
+        screen.blit(textShadow,
+            (position[0] + 1, position[1] + 1))
+        
+    screen.blit(text,
+        (position[0], position[1]))
+
+
 # ---------
 # Class for defining the notes that will come down the screen
 # ---------
@@ -238,8 +265,7 @@ class SongSelector(AppMode):
                 prefix = "  "
                 color = BLACK
             if row < len(this.songList):
-                songText = create_text(prefix + this.songList[row], nameFonts, LINEHEIGHT, color)
-                screen.blit(songText, (paneLeft+10, paneTop + (row-this.topRow+0.5)*LINEHEIGHT))
+                drawText(prefix + this.songList[row], (paneLeft+10, paneTop + (row-this.topRow+0.5)*LINEHEIGHT), LINEHEIGHT, color)
         pygame.display.flip()
 
     def handleEvent(this, event):
@@ -414,14 +440,10 @@ class SongStartup(AppMode):
         HEIGHT = screen.get_height()
 
         # Draw the title of the song
-        titleText = create_text(this.songTitle, nameFonts, 36, GRAY)
-        screen.blit(titleText,
-                    ((WIDTH - titleText.get_width()) // 2, HEIGHT // 4))
+        drawText(this.songTitle, (WIDTH // 2, HEIGHT // 4), 36, GRAY, centerX= True)
 
         # Draw BPM
-        bpmText = create_text(str(this.tempo) + " bpm", nameFonts, 24, GRAY)
-        screen.blit(bpmText,
-                    ((WIDTH - bpmText.get_width()) // 2, HEIGHT // 4 + 36))
+        drawText(str(this.tempo) + " bpm", (WIDTH // 2, HEIGHT // 4 + 36), 36, GRAY, centerX= True)
 
         # Draw the line where we should play.
         pygame.draw.line(screen, BLACK, [0,FLASHLINE], [WIDTH,FLASHLINE], 5)
@@ -441,27 +463,12 @@ class SongStartup(AppMode):
             x = refPos + (note-48)*spacing
             noteName = diatonicNames[tone] + str(octave)
             theNote = Note(tone, 0, octave, "Q", 0, 1)
-            theNote.draw(screen, [x, STARTLINE], 0)
+            theNote.draw(screen, (x, STARTLINE), 0)
 
             cnt = this.noteCount[note]
-            pos = [x, STARTLINE+20]
+            pos = (x, STARTLINE+20)
 
-            cntText = create_text(str(cnt), nameFonts, 18, WHITE)
-            cntTextShadow = create_text(str(cnt), nameFonts, 18, BLACK)
-            screen.blit(cntTextShadow,
-                (pos[0] - cntText.get_width() // 2 - 1, pos[1] - cntText.get_height() // 2 - 1))
-            screen.blit(cntTextShadow,
-                (pos[0] - cntText.get_width() // 2 + 1, pos[1] - cntText.get_height() // 2 - 1))
-            screen.blit(cntTextShadow,
-                (pos[0] - cntText.get_width() // 2 - 1, pos[1] - cntText.get_height() // 2))
-            screen.blit(cntTextShadow,
-                (pos[0] - cntText.get_width() // 2 + 1, pos[1] - cntText.get_height() // 2))
-            screen.blit(cntTextShadow,
-                (pos[0] - cntText.get_width() // 2 - 1, pos[1] - cntText.get_height() // 2 + 1))
-            screen.blit(cntTextShadow,
-                (pos[0] - cntText.get_width() // 2 + 1, pos[1] - cntText.get_height() // 2 + 1))
-            screen.blit(cntText,
-                (pos[0] - cntText.get_width() // 2, pos[1] - cntText.get_height() // 2))
+            drawText(str(cnt), (x, STARTLINE + 20), 18, WHITE, BLACK, True, True)
 
         LINEHEIGHT = 18
         PANEHEIGHT = LINEHEIGHT * (this.visibleRows+4)
@@ -470,8 +477,7 @@ class SongStartup(AppMode):
         paneLeft = (WIDTH - PANEWIDTH) // 2
         paneTop = (HEIGHT - PANEHEIGHT) // 2
         pygame.draw.rect(screen, WHITE, pygame.Rect(paneLeft, paneTop, PANEWIDTH, PANEHEIGHT))
-        instrText = create_text("Press Key to Toggle: [P]layer, [A]ccompaniment", nameFonts, LINEHEIGHT, BLACK)
-        screen.blit(instrText, (paneLeft+5, paneTop + 0.5*LINEHEIGHT))
+        drawText("Press Key to Toggle: [P]layer, [A]ccompaniment", (paneLeft + 5, paneTop + 0.5 * LINEHEIGHT), LINEHEIGHT, BLACK)
 
         for row in range(this.topRow, this.topRow+this.visibleRows):
             if (row == this.curRow):
@@ -485,10 +491,8 @@ class SongStartup(AppMode):
                 partID = this.parts[row][0]
                 playCode = playCode + ("P " if partID in this.players else "  ")
                 playCode = playCode + ("A]" if partID in this.accompany else " ]")
-                playText = create_text(prefix + playCode, nameFonts, LINEHEIGHT, color)
-                screen.blit(playText, (paneLeft+10, paneTop + (row-this.topRow+2)*LINEHEIGHT))
-                partText = create_text(" ".join(this.parts[row]), nameFonts, LINEHEIGHT, color)
-                screen.blit(partText, (paneLeft+80, paneTop + (row-this.topRow+2)*LINEHEIGHT))
+                drawText(prefix + playCode, (paneLeft+10, paneTop + (row-this.topRow+2)*LINEHEIGHT), LINEHEIGHT, color)
+                drawText(" ".join(this.parts[row]), (paneLeft+80, paneTop + (row-this.topRow+2)*LINEHEIGHT), LINEHEIGHT, color)
         pygame.display.flip()
 
     def handleEvent(this, event):
@@ -558,7 +562,6 @@ class SongPlayer(AppMode):
         this.noteQueue = []
         this.lastNoteTimeCode = 0
 
-        startTempo = 0
         this.beatDivisions = 1
         if (mxml.tag == 'score-partwise'):
             # Using the parts identified, look for measures belonging to that part.
@@ -687,21 +690,18 @@ class SongPlayer(AppMode):
 
         # Draw the line where we should play.
         pygame.draw.line(screen, BLACK, [0,FLASHLINE], [WIDTH,FLASHLINE], 5)
-
+        
         # Draw the title of the song
-        titleText = create_text(this.songTitle, nameFonts, 36, GRAY)
-        screen.blit(titleText,
-                    ((WIDTH - titleText.get_width()) // 2, HEIGHT // 4))
+        drawText(this.songTitle, (WIDTH // 2, HEIGHT // 4), 36, GRAY, centerX= True)
 
         # Draw BPM
-        bpmText = create_text(str(this.tempo) + " bpm", nameFonts, 24, GRAY)
-        screen.blit(bpmText,
-                    ((WIDTH - bpmText.get_width()) // 2, HEIGHT // 4 + 36))
+        drawText(str(this.tempo) + " bpm", (WIDTH // 2, HEIGHT // 4 + 36), 36, GRAY, centerX= True)
 
         # Process each note that should appear on the screen.
         i = 0
         drawQueue = []
         noteQueue = set()
+        lastNote = dict()
         
         if this.octaves=='1':
             refPos = 100
@@ -715,18 +715,30 @@ class SongPlayer(AppMode):
             tone = nextNote.tone
             x = refPos + ((octave-4)*12 + tone)*spacing
             noteName = diatonicNames[tone] + str(octave)
-            if not noteName in noteQueue:
-                addNote = DrawNote(nextNote, x, STARTLINE, this.timeCode)
-                drawQueue.append(addNote)
-                noteQueue.add(noteName)
 
-            if this.timeCode - 0/this.timeFactor/4 < nextNote.timeCode and nextNote.timeCode < this.timeCode + timeOnScreen/this.timeFactor:
+            if this.timeCode < nextNote.timeCode and nextNote.timeCode < this.timeCode + timeOnScreen/this.timeFactor:
                 # Draw the note
                 y = STARTLINE + int((FLASHLINE-STARTLINE)*(1 + (this.timeCode - nextNote.timeCode)*this.timeFactor/timeOnScreen))
                 addNote = DrawNote(nextNote, x, y, this.timeCode)
+                addNote.note.index = ""
+                drawQueue.append(addNote)
+            elif nextNote.timeCode >= this.timeCode + timeOnScreen/this.timeFactor:
+                # Draw the note on the start line
+                addNote = DrawNote(nextNote, x, STARTLINE, this.timeCode)
+                if lastNote.get(noteName) is None:
+                    lastNote[noteName] = 1
+                else:
+                    lastNote[noteName] = lastNote.get(noteName) + 1
+                addNote.note.index = str(lastNote[noteName])
                 drawQueue.append(addNote)
 
+
             i = i+1
+        
+        def noteSort(drawNote):
+            return drawNote.note.octave * 12 + drawNote.note.tone
+
+        drawQueue.sort(key=noteSort)
 
         for note in drawQueue:
             drawDashedHLine(screen, note.y, 10, 20)
@@ -869,6 +881,7 @@ class Note():
         self.symbol = symbol
         self.timeCode = timeCode
         self.timeLength = timeLength
+        self.index = ""
 
     def draw(self, screen, pos, curTime):
         global nameFonts
@@ -878,22 +891,8 @@ class Note():
         radius = NOTESIZE
         noteRect = pygame.draw.circle(screen, color, pos, radius)
         noteRect = pygame.draw.circle(screen, BLACK, pos, radius, 1)
-        noteText = create_text(noteName, nameFonts, 18, WHITE)
-        noteTextShadow = create_text(noteName, nameFonts, 18, BLACK)
-        screen.blit(noteTextShadow,
-            (pos[0] - noteText.get_width() // 2 - 1, pos[1] - noteText.get_height() // 2 - 1))
-        screen.blit(noteTextShadow,
-            (pos[0] - noteText.get_width() // 2 + 1, pos[1] - noteText.get_height() // 2 - 1))
-        screen.blit(noteTextShadow,
-            (pos[0] - noteText.get_width() // 2 - 1, pos[1] - noteText.get_height() // 2))
-        screen.blit(noteTextShadow,
-            (pos[0] - noteText.get_width() // 2 + 1, pos[1] - noteText.get_height() // 2))
-        screen.blit(noteTextShadow,
-            (pos[0] - noteText.get_width() // 2 - 1, pos[1] - noteText.get_height() // 2 + 1))
-        screen.blit(noteTextShadow,
-            (pos[0] - noteText.get_width() // 2 + 1, pos[1] - noteText.get_height() // 2 + 1))
-        screen.blit(noteText,
-            (pos[0] - noteText.get_width() // 2, pos[1] - noteText.get_height() // 2))
+        drawText(noteName, pos, 18, WHITE, BLACK, True, True)
+        drawText(self.index, (pos[0], pos[1] + 20), 18, WHITE, BLACK, True, True)
 
 
 # ----------
